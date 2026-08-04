@@ -2677,6 +2677,83 @@ async def test_prepare_input_with_session_matches_copied_items_by_content() -> N
 
 
 @pytest.mark.asyncio
+async def test_prepare_input_with_session_callback_repeats_history_item() -> None:
+    history_item = cast(TResponseInputItem, {"role": "user", "content": "history"})
+    session = SimpleListSession(history=[history_item])
+
+    def callback(
+        history: list[TResponseInputItem], new_input: list[TResponseInputItem]
+    ) -> list[TResponseInputItem]:
+        # Re-emphasize the original request at the end of the model context.
+        return history + [history[0]] + new_input
+
+    prepared, session_items = await prepare_input_with_session("new", session, callback)
+
+    assert [cast(dict[str, Any], item).get("content") for item in prepared] == [
+        "history",
+        "history",
+        "new",
+    ]
+    assert [cast(dict[str, Any], item).get("content") for item in session_items] == ["new"]
+
+
+@pytest.mark.asyncio
+async def test_prepare_input_with_session_repeated_history_keeps_new_duplicate_content() -> None:
+    history_item = cast(TResponseInputItem, {"role": "user", "content": "history"})
+    session = SimpleListSession(history=[history_item])
+    rebuilt_item = cast(TResponseInputItem, {"role": "user", "content": "history"})
+
+    def callback(
+        history: list[TResponseInputItem], new_input: list[TResponseInputItem]
+    ) -> list[TResponseInputItem]:
+        # The repeated history object is provenance-matched, but the caller-built item that
+        # happens to serialize identically is genuinely new input and must still be persisted.
+        return history + [history[0]] + [rebuilt_item] + new_input
+
+    prepared, session_items = await prepare_input_with_session("new", session, callback)
+
+    assert [cast(dict[str, Any], item).get("content") for item in prepared] == [
+        "history",
+        "history",
+        "history",
+        "new",
+    ]
+    assert [cast(dict[str, Any], item).get("content") for item in session_items] == [
+        "history",
+        "new",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_session_input_callback_repeating_history_does_not_compound_history() -> None:
+    session = SimpleListSession()
+    model = FakeModel()
+    agent = Agent(name="test", model=model)
+
+    def repeat_first(
+        history: list[TResponseInputItem], new_input: list[TResponseInputItem]
+    ) -> list[TResponseInputItem]:
+        if not history:
+            return new_input
+        return history + [history[0]] + new_input
+
+    run_config = RunConfig(session_input_callback=repeat_first)
+
+    for turn in range(4):
+        model.set_next_output([get_text_message(f"a{turn}")])
+        await Runner.run(agent, input=f"u{turn}", session=session, run_config=run_config)
+
+    stored = await session.get_items()
+    user_inputs = [
+        cast(dict[str, Any], item).get("content")
+        for item in stored
+        if cast(dict[str, Any], item).get("role") == "user"
+    ]
+    assert user_inputs == ["u0", "u1", "u2", "u3"]
+    assert len(stored) == 8
+
+
+@pytest.mark.asyncio
 async def test_prepare_input_with_openai_conversation_strips_assistant_history_ids() -> None:
     class DummyOpenAIConversationsSession(OpenAIConversationsSession):
         def __init__(self, history: list[TResponseInputItem]) -> None:

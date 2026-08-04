@@ -1597,6 +1597,39 @@ async def test_stream_input_persistence_saves_only_new_turn_input(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_stream_session_callback_repeating_history_does_not_compound_history():
+    session = SimpleListSession()
+    model = FakeModel()
+    agent = Agent(name="test", model=model)
+
+    def repeat_first(
+        history: list[TResponseInputItem], new_input: list[TResponseInputItem]
+    ) -> list[TResponseInputItem]:
+        if not history:
+            return new_input
+        return history + [history[0]] + new_input
+
+    run_config = RunConfig(session_input_callback=repeat_first)
+
+    for turn in range(4):
+        model.set_next_output([get_text_message(f"a{turn}")])
+        result = Runner.run_streamed(
+            agent, input=f"u{turn}", session=session, run_config=run_config
+        )
+        async for _ in result.stream_events():
+            pass
+
+    stored = await session.get_items()
+    user_inputs = [
+        cast(dict[str, Any], item).get("content")
+        for item in stored
+        if cast(dict[str, Any], item).get("role") == "user"
+    ]
+    assert user_inputs == ["u0", "u1", "u2", "u3"]
+    assert len(stored) == 8
+
+
+@pytest.mark.asyncio
 async def test_slow_input_guardrail_still_raises_exception_streamed():
     async def guardrail_function(
         context: RunContextWrapper[Any], agent: Agent[Any], input: Any

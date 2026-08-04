@@ -176,6 +176,12 @@ async def prepare_input_with_session(
     against deep-copied history and new-input lists, first by object identity and then by
     content frequency, so retries and custom merge strategies do not accidentally re-persist
     old history as fresh input.
+
+    Object identity with a copied history item is durable provenance rather than a one-shot
+    match: a callback may emit the same history object any number of times and no occurrence is
+    persisted. Content equality alone is never treated as provenance. Reconstructed items are
+    matched against a per-key frequency budget sized to the stored history, so an item the caller
+    genuinely wants to send again is still persisted once that budget is exhausted.
     """
 
     if session is None:
@@ -230,6 +236,7 @@ async def prepare_input_with_session(
             history_for_callback,
             ignore_openai_conversation_item_ids=is_openai_conversation_session,
         )
+        matched_history_identities: set[int] = set()
         new_refs = _build_reference_map(new_items_for_callback)
         history_counts = _build_frequency_map(
             history_for_callback,
@@ -248,8 +255,14 @@ async def prepare_input_with_session(
                 new_counts[new_key] = max(new_counts.get(new_key, 0) - 1, 0)
                 appended.append(item)
                 continue
-            if _consume_reference(history_refs, history_key, item):
-                history_counts[history_key] = max(history_counts.get(history_key, 0) - 1, 0)
+            if _reference_matches(history_refs, history_key, item):
+                # Object identity with a copied history item proves the item came from history, so
+                # it stays a history reference for every occurrence the callback emits. Spend the
+                # content-frequency budget only once per history object so reconstructed copies
+                # still map to the remaining stored items instead of being dropped.
+                if id(item) not in matched_history_identities:
+                    matched_history_identities.add(id(item))
+                    history_counts[history_key] = max(history_counts.get(history_key, 0) - 1, 0)
                 prune_history_indexes.add(combined_index)
                 continue
             if history_counts.get(history_key, 0) > 0:
@@ -915,6 +928,11 @@ def _build_reference_map(
         )
         refs.setdefault(key, []).append(item)
     return refs
+
+
+def _reference_matches(ref_map: dict[str, list[Any]], key: str, candidate: Any) -> bool:
+    """Report whether a candidate is one of the concrete session items recorded under a key."""
+    return any(existing is candidate for existing in ref_map.get(key, ()))
 
 
 def _consume_reference(ref_map: dict[str, list[Any]], key: str, candidate: Any) -> bool:
