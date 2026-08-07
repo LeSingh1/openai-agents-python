@@ -428,6 +428,42 @@ async def test_sip_initial_session_payload_does_not_reevaluate_agent_handoff_wit
     assert call_count == 1
 
 
+@pytest.mark.asyncio
+async def test_sip_initial_session_payload_omits_audio_formats_for_call_id() -> None:
+    """The accept payload must match what `connect()` sends for the same call id."""
+    agent = RealtimeAgent(name="parent")
+
+    payload = await OpenAIRealtimeSIPModel.build_initial_session_payload(
+        agent,
+        model_config={"call_id": "call_123"},
+    )
+
+    assert payload.audio is not None
+    assert payload.audio.input is not None
+    assert payload.audio.output is not None
+    assert payload.audio.input.format is None
+    assert payload.audio.output.format is None
+
+
+@pytest.mark.asyncio
+async def test_sip_initial_session_payload_keeps_explicit_formats_for_call_id() -> None:
+    agent = RealtimeAgent(name="parent")
+
+    payload = await OpenAIRealtimeSIPModel.build_initial_session_payload(
+        agent,
+        model_config={"call_id": "call_123"},
+        overrides={"input_audio_format": "g711_ulaw", "output_audio_format": "g711_ulaw"},
+    )
+
+    assert payload.audio is not None
+    assert payload.audio.input is not None
+    assert payload.audio.input.format is not None
+    assert payload.audio.input.format.type == "audio/pcmu"
+    assert payload.audio.output is not None
+    assert payload.audio.output.format is not None
+    assert payload.audio.output.format.type == "audio/pcmu"
+
+
 def test_call_id_session_update_omits_null_audio_formats() -> None:
     model = OpenAIRealtimeWebSocketModel()
     model._call_id = "call_123"

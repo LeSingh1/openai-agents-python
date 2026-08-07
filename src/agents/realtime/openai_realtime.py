@@ -1898,6 +1898,11 @@ class OpenAIRealtimeSIPModel(OpenAIRealtimeWebSocketModel):
                 )
 
         model = OpenAIRealtimeWebSocketModel()
+        # `connect()` records the call id before building the session config, and
+        # `_get_session_config` uses it to leave the audio formats unset instead of defaulting
+        # them to 24kHz PCM. Mirror that here so the accept payload does not force a format
+        # onto a call leg that already negotiated one.
+        model._call_id = (model_config or {}).get("call_id")
         return model._get_session_config(merged_settings)
 
     async def connect(self, options: RealtimeModelConfig) -> None:
