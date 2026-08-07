@@ -442,6 +442,49 @@ async def test_session_connects_and_configures_successfully():
         await session.close()
 
 
+async def _capture_session_update(settings: STTModelSettings) -> dict:
+    mock_ws = create_mock_websocket(
+        [
+            json.dumps({"type": "transcription_session.created"}),
+            json.dumps({"type": "transcription_session.updated"}),
+        ]
+    )
+    with patch("websockets.connect", return_value=mock_ws):
+        session = OpenAISTTTranscriptionSession(
+            input=await FakeStreamedAudioInput.get(count=2),
+            client=AsyncMock(api_key="FAKE_KEY"),
+            model="gpt-4o-transcribe",
+            settings=settings,
+            trace_include_sensitive_data=False,
+            trace_include_sensitive_audio_data=False,
+        )
+        async for _ in session.transcribe_turns():
+            pass
+        await session.close()
+
+    sent = [json.loads(call.args[0]) for call in mock_ws.send.call_args_list]
+    updates = [msg for msg in sent if msg.get("type") == "session.update"]
+    assert len(updates) == 1, f"Expected one session.update in {sent}"
+    return cast(dict, updates[0]["session"]["audio"]["input"]["transcription"])
+
+
+@pytest.mark.asyncio
+async def test_session_update_forwards_language_and_prompt():
+    """Streamed sessions honor `language`/`prompt`, like the non-streamed `transcribe()` path."""
+    transcription = await _capture_session_update(
+        STTModelSettings(language="fr", prompt="Glossary: OpenAI, Agents SDK")
+    )
+    assert transcription["model"] == "gpt-4o-transcribe"
+    assert transcription["language"] == "fr"
+    assert transcription["prompt"] == "Glossary: OpenAI, Agents SDK"
+
+
+@pytest.mark.asyncio
+async def test_session_update_omits_unset_language_and_prompt():
+    transcription = await _capture_session_update(STTModelSettings())
+    assert transcription == {"model": "gpt-4o-transcribe"}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("buffer", "expected_pcm16"),
