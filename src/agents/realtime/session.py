@@ -1373,6 +1373,11 @@ class RealtimeSession(RealtimeModelListener):
                 else:
                     # If the existing item is not a message, just replace it.
                     new_history[existing_index] = event
+            elif event.type != "message":
+                # Non-message items (tool calls) carry their full state on every update. The
+                # model reuses one item id for the call and its output, so the completed update
+                # is what carries `status="completed"` and the tool output into the history.
+                new_history[existing_index] = event
             return new_history
 
         # Otherwise, insert it after the previous_item_id if that is set

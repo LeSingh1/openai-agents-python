@@ -41,6 +41,7 @@ from agents.realtime.items import (
     InputAudio,
     InputText,
     RealtimeItem,
+    RealtimeToolCallItem,
     UserMessageItem,
 )
 from agents.realtime.model import RealtimeModel, RealtimeModelConfig
@@ -2074,6 +2075,40 @@ class TestHistoryManagement:
         assert [item.item_id for item in history] == ["A", "B", "D", "C"]
         itemB_result = cast(AssistantMessageItem, history[1])
         assert itemB_result.content[0].text == "Updated B"  # type: ignore
+
+    def test_tool_call_item_update_records_output(self):
+        """The model reuses one item id for a tool call and its output."""
+        old_history: list[RealtimeItem] = [
+            AssistantMessageItem(
+                item_id="msg_1", role="assistant", content=[AssistantText(text="hi")]
+            ),
+            RealtimeToolCallItem(
+                item_id="call_item_1",
+                call_id="call_1",
+                type="function_call",
+                status="in_progress",
+                arguments='{"city": "Oakland"}',
+                name="get_weather",
+                output=None,
+            ),
+        ]
+
+        completed = RealtimeToolCallItem(
+            item_id="call_item_1",
+            call_id="call_1",
+            type="function_call",
+            status="completed",
+            arguments='{"city": "Oakland"}',
+            name="get_weather",
+            output="sunny",
+        )
+
+        new_history = RealtimeSession._get_new_history(old_history, completed)
+
+        assert [item.item_id for item in new_history] == ["msg_1", "call_item_1"]
+        tool_item = cast(RealtimeToolCallItem, new_history[1])
+        assert tool_item.status == "completed"
+        assert tool_item.output == "sunny"
 
 
 # Test 3: Tool call execution flow (_handle_tool_call method)
