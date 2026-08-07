@@ -1540,6 +1540,79 @@ async def test_agent_as_tool_rejected_nested_approval_resumes_run(
 
 
 @pytest.mark.asyncio
+async def test_agent_as_tool_rejected_nested_approval_keeps_rejection_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit rejection messages should reach the nested resumed run."""
+
+    agent = Agent(name="outer")
+    tool_call = make_function_tool_call(
+        "outer_tool",
+        call_id="outer-1",
+        arguments='{"input": "hello"}',
+    )
+    tool_context = ToolContext(
+        context=None,
+        tool_name="outer_tool",
+        tool_call_id="outer-1",
+        tool_arguments=tool_call.arguments,
+        tool_call=tool_call,
+    )
+
+    inner_call = make_function_tool_call("inner_tool", call_id="inner-1")
+    approval_item = ToolApprovalItem(agent=agent, raw_item=inner_call)
+
+    class DummyState:
+        def __init__(self, nested_context: ToolContext) -> None:
+            self._context = nested_context
+
+    class DummyPendingResult:
+        def __init__(self) -> None:
+            self.interruptions = [approval_item]
+            self.final_output = None
+
+        def to_state(self) -> DummyState:
+            return resume_state
+
+    class DummyResumedResult:
+        def __init__(self) -> None:
+            self.interruptions: list[ToolApprovalItem] = []
+            self.final_output = "rejected"
+
+    nested_context = ToolContext(
+        context=None,
+        tool_name=tool_call.name,
+        tool_call_id=tool_call.call_id,
+        tool_arguments=tool_call.arguments,
+        tool_call=tool_call,
+    )
+    resume_state = DummyState(nested_context)
+    pending_result = DummyPendingResult()
+    record_agent_tool_run_result(tool_call, cast(Any, pending_result))
+    tool_context.reject_tool(approval_item, rejection_message="policy denial")
+
+    resumed_result = DummyResumedResult()
+
+    async def run_resume(cls, /, starting_agent, input, **kwargs) -> DummyResumedResult:
+        assert input is resume_state
+        assert input._context is not None
+        assert input._context.is_tool_approved("inner_tool", "inner-1") is False
+        assert input._context.get_rejection_message("inner_tool", "inner-1") == "policy denial"
+        return resumed_result
+
+    monkeypatch.setattr(Runner, "run", classmethod(run_resume))
+    tool = agent.as_tool(
+        tool_name="outer_tool",
+        tool_description="Outer agent tool",
+        is_enabled=True,
+    )
+
+    output = await tool.on_invoke_tool(tool_context, tool_call.arguments)
+
+    assert output == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_agent_as_tool_wrapped_hosted_mcp_exact_decision_resumes_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

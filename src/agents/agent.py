@@ -852,15 +852,11 @@ class Agent(AgentBase, Generic[TContext]):
                         )
                     else:
                         always_reject = bool(approval_record and approval_record.rejected is True)
-                        rejection_message = (
-                            parent_context.get_rejection_message(
-                                tool_name,
-                                call_id,
-                                tool_namespace=tool_namespace,
-                                existing_pending=interruption,
-                            )
-                            if hosted_request is not None
-                            else None
+                        rejection_message = parent_context.get_rejection_message(
+                            tool_name,
+                            call_id,
+                            tool_namespace=tool_namespace,
+                            existing_pending=interruption,
                         )
                         nested_context.reject_tool(
                             interruption,
