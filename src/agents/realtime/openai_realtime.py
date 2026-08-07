@@ -1395,8 +1395,21 @@ class OpenAIRealtimeWebSocketModel(RealtimeModel):
                 playback_item_id = playback_state.get("current_item_id")
                 playback_content_index = playback_state.get("current_item_content_index") or 0
                 playback_elapsed_ms = playback_state.get("elapsed_ms")
+                # Report the item that is actually playing so listeners stop the right buffer,
+                # and so this matches both the truncate below and the explicit interrupt path in
+                # `_interrupt_audio_playback`. A custom playback tracker can lag behind the last
+                # item the model generated; fall back to that item when it has no current item.
+                if playback_item_id:
+                    interrupted_item_id = playback_item_id
+                    interrupted_content_index = playback_content_index
+                else:
+                    interrupted_item_id = item_id
+                    interrupted_content_index = content_index
                 await self._emit_event(
-                    RealtimeModelAudioInterruptedEvent(item_id=item_id, content_index=content_index)
+                    RealtimeModelAudioInterruptedEvent(
+                        item_id=interrupted_item_id,
+                        content_index=interrupted_content_index,
+                    )
                 )
 
                 elapsed_override = getattr(parsed, "audio_end_ms", None)

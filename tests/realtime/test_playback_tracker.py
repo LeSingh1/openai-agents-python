@@ -128,6 +128,53 @@ class TestPlaybackTracker:
         assert truncate_events[0].audio_end_ms == 1000
 
     @pytest.mark.asyncio
+    async def test_speech_started_interrupts_item_being_played(self, model, monkeypatch):
+        """VAD barge-in must report the item the tracker is playing, not the newest one.
+
+        A custom playback tracker exists precisely because playback lags generation, so the
+        model's last generated item can be ahead of what the user is hearing.
+        """
+        custom_tracker = RealtimePlaybackTracker()
+        custom_tracker.set_audio_format("pcm16")
+        custom_tracker.on_play_ms("item_1", 0, 100.0)
+        model._playback_tracker = custom_tracker
+        model._ongoing_response = True
+
+        model._audio_state_tracker.set_audio_format("pcm16")
+        model._audio_state_tracker.on_audio_delta("item_1", 0, b"a" * 48_000)
+        model._audio_state_tracker.on_audio_delta("item_2", 0, b"a" * 48_000)
+
+        send_raw = AsyncMock()
+        monkeypatch.setattr(model, "_send_raw_message", send_raw)
+        listener = AsyncMock()
+        model.add_listener(listener)
+
+        await model._handle_ws_event(
+            {
+                "type": "input_audio_buffer.speech_started",
+                "event_id": "e1",
+                "item_id": "item_1",
+                "audio_start_ms": 0,
+                "audio_end_ms": 0,
+            }
+        )
+
+        interrupted_events = [
+            call.args[0]
+            for call in listener.on_event.await_args_list
+            if getattr(call.args[0], "type", None) == "audio_interrupted"
+        ]
+        truncate_events = [
+            call.args[0]
+            for call in send_raw.await_args_list
+            if getattr(call.args[0], "type", None) == "conversation.item.truncate"
+        ]
+        assert len(interrupted_events) == 1
+        assert truncate_events
+        assert interrupted_events[0].item_id == "item_1"
+        assert interrupted_events[0].item_id == truncate_events[0].item_id
+
+    @pytest.mark.asyncio
     async def test_interrupt_matches_speech_started_truncation_point(self, model, monkeypatch):
         """Explicit interrupts and VAD barge-in must truncate at the same point."""
 
