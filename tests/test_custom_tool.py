@@ -3,12 +3,18 @@ from typing import Any, cast
 import pytest
 from openai.types.responses import ResponseCustomToolCall
 
-from agents import Agent, CustomTool, RunConfig, RunContextWrapper
+from agents import Agent, CustomTool, RunConfig, RunContextWrapper, ToolSearchTool
+from agents.exceptions import UserError
 from agents.items import ToolApprovalItem, ToolCallOutputItem
 from agents.lifecycle import RunHooks
 from agents.run_internal.run_steps import ToolRunCustom
 from agents.run_internal.tool_actions import CustomToolAction
-from agents.tool import CustomToolOnApprovalFunctionResult
+from agents.tool import (
+    CustomToolOnApprovalFunctionResult,
+    is_required_tool_search_surface,
+    is_responses_tool_search_surface,
+    validate_responses_tool_search_configuration,
+)
 from agents.tool_context import ToolContext
 
 
@@ -92,3 +98,49 @@ async def test_custom_tool_on_approval_callback_auto_rejects_with_reason() -> No
         "call_id": "call_custom",
         "output": "Not allowed",
     }
+
+
+def test_deferred_custom_tool_is_a_tool_search_surface() -> None:
+    async def invoke(_ctx: ToolContext[Any], raw_input: str) -> str:
+        return raw_input
+
+    tool = CustomTool(
+        name="raw_editor",
+        description="Edit raw text.",
+        on_invoke_tool=invoke,
+        defer_loading=True,
+    )
+
+    assert tool.tool_config.get("defer_loading") is True
+    assert is_responses_tool_search_surface(tool) is True
+    assert is_required_tool_search_surface(tool) is True
+
+    validate_responses_tool_search_configuration([tool, ToolSearchTool()])
+
+
+def test_deferred_custom_tool_requires_tool_search_tool() -> None:
+    async def invoke(_ctx: ToolContext[Any], raw_input: str) -> str:
+        return raw_input
+
+    tool = CustomTool(
+        name="raw_editor",
+        description="Edit raw text.",
+        on_invoke_tool=invoke,
+        defer_loading=True,
+    )
+
+    with pytest.raises(UserError, match="Deferred-loading Responses tools require ToolSearchTool"):
+        validate_responses_tool_search_configuration([tool])
+
+
+def test_non_deferred_custom_tool_is_not_a_tool_search_surface() -> None:
+    async def invoke(_ctx: ToolContext[Any], raw_input: str) -> str:
+        return raw_input
+
+    tool = CustomTool(name="raw_editor", description="Edit raw text.", on_invoke_tool=invoke)
+
+    assert is_responses_tool_search_surface(tool) is False
+    assert is_required_tool_search_surface(tool) is False
+
+    with pytest.raises(UserError, match="requires at least one searchable Responses surface"):
+        validate_responses_tool_search_configuration([tool, ToolSearchTool()])
