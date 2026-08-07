@@ -75,6 +75,18 @@ def test_set_default_openai_api():
     )
 
 
+def test_set_default_openai_api_rejects_invalid_value():
+    set_default_openai_api("chat_completions")
+
+    with pytest.raises(ValueError, match="Expected one of: 'chat_completions', 'responses'"):
+        set_default_openai_api("responses_api")  # type: ignore[arg-type]
+
+    # A rejected value must not silently switch the default API over to responses.
+    assert isinstance(OpenAIProvider().get_model("gpt-4"), OpenAIChatCompletionsModel)
+
+    set_default_openai_api("responses")
+
+
 def test_set_default_openai_responses_transport():
     set_default_openai_api("responses")
 
