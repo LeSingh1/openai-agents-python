@@ -52,3 +52,45 @@ def test_dont_log_tool_data_true():
 @patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_TOOL_DATA": "false"})
 def test_dont_log_tool_data_false():
     assert _load_dont_log_tool_data() is False
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_MODEL_DATA": "yes"})
+def test_dont_log_model_data_yes():
+    assert _load_dont_log_model_data() is True
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_MODEL_DATA": "off"})
+def test_dont_log_model_data_off():
+    assert _load_dont_log_model_data() is False
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_MODEL_DATA": " True "})
+def test_dont_log_model_data_ignores_surrounding_whitespace():
+    assert _load_dont_log_model_data() is True
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_MODEL_DATA": "maybe"})
+def test_dont_log_model_data_unrecognized_value_keeps_redaction():
+    # An unrecognized value must not disable redaction of model data.
+    assert _load_dont_log_model_data() is True
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_TOOL_DATA": "yes"})
+def test_dont_log_tool_data_yes():
+    assert _load_dont_log_tool_data() is True
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_TOOL_DATA": "off"})
+def test_dont_log_tool_data_off():
+    assert _load_dont_log_tool_data() is False
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_TOOL_DATA": " True "})
+def test_dont_log_tool_data_ignores_surrounding_whitespace():
+    assert _load_dont_log_tool_data() is True
+
+
+@patch.dict(os.environ, {"OPENAI_AGENTS_DONT_LOG_TOOL_DATA": "maybe"})
+def test_dont_log_tool_data_unrecognized_value_keeps_redaction():
+    # An unrecognized value must not disable redaction of tool data.
+    assert _load_dont_log_tool_data() is True

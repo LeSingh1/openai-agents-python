@@ -1,12 +1,20 @@
 import os
 
+_TRUTHY_FLAG_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSY_FLAG_VALUES = frozenset({"0", "false", "no", "off"})
+
 
 def _debug_flag_enabled(flag: str, default: bool = False) -> bool:
     flag_value = os.getenv(flag)
     if flag_value is None:
         return default
-    else:
-        return flag_value == "1" or flag_value.lower() == "true"
+    normalized = flag_value.strip().lower()
+    if normalized in _TRUTHY_FLAG_VALUES:
+        return True
+    if normalized in _FALSY_FLAG_VALUES:
+        return False
+    # Unrecognized values must not silently flip the flag; keep the safe default.
+    return default
 
 
 def _load_dont_log_model_data() -> bool:
