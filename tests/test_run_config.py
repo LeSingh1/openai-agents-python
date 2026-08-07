@@ -300,6 +300,30 @@ def test_trace_include_sensitive_data_explicit_override_takes_precedence(monkeyp
     assert config.trace_include_sensitive_data is False
 
 
+def test_sandbox_concurrency_limits_reject_invalid_manifest_entries() -> None:
+    with pytest.raises(
+        ValueError,
+        match="concurrency_limits.manifest_entries must be at least 1",
+    ):
+        SandboxConcurrencyLimits(manifest_entries=0)
+
+
+def test_sandbox_concurrency_limits_reject_invalid_local_dir_files() -> None:
+    with pytest.raises(
+        ValueError,
+        match="concurrency_limits.local_dir_files must be at least 1",
+    ):
+        SandboxConcurrencyLimits(local_dir_files=0)
+
+
+def test_run_config_dictionary_rejects_invalid_concurrency_limits() -> None:
+    with pytest.raises(
+        ValueError,
+        match="concurrency_limits.manifest_entries must be at least 1",
+    ):
+        RunConfig(sandbox={"concurrency_limits": {"manifest_entries": 0}})
+
+
 def test_tool_execution_config_rejects_invalid_function_tool_concurrency() -> None:
     with pytest.raises(
         ValueError,

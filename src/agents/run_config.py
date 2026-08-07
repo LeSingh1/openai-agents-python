@@ -145,6 +145,9 @@ class SandboxConcurrencyLimits:
     Set to `None` to disable this per-local-dir file copy limit.
     """
 
+    def __post_init__(self) -> None:
+        self.validate()
+
     def validate(self) -> None:
         if self.manifest_entries is not None and self.manifest_entries < 1:
             raise ValueError("concurrency_limits.manifest_entries must be at least 1")

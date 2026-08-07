@@ -3110,22 +3110,22 @@ async def test_session_manager_rejects_invalid_archive_limits() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("limits", "message"),
+    ("manifest_entries", "local_dir_files", "message"),
     [
-        (
-            SandboxConcurrencyLimits(manifest_entries=0, local_dir_files=1),
-            "concurrency_limits.manifest_entries must be at least 1",
-        ),
-        (
-            SandboxConcurrencyLimits(manifest_entries=1, local_dir_files=0),
-            "concurrency_limits.local_dir_files must be at least 1",
-        ),
+        (0, 1, "concurrency_limits.manifest_entries must be at least 1"),
+        (1, 0, "concurrency_limits.local_dir_files must be at least 1"),
     ],
 )
 async def test_session_manager_rejects_invalid_concurrency_limits(
-    limits: SandboxConcurrencyLimits,
+    manifest_entries: int,
+    local_dir_files: int,
     message: str,
 ) -> None:
+    # The constructor rejects these values, so mutate a valid instance to reach
+    # the session manager's own validation.
+    limits = SandboxConcurrencyLimits(manifest_entries=1, local_dir_files=1)
+    limits.manifest_entries = manifest_entries
+    limits.local_dir_files = local_dir_files
     agent = SandboxAgent(name="worker", model=FakeModel(), instructions="Worker.")
     client = _FakeClient(_FakeSession(Manifest()))
     manager = SandboxRuntimeSessionManager(
