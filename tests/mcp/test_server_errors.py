@@ -453,6 +453,39 @@ async def test_paginated_list_failure_does_not_retain_opaque_cursor(method_name:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method_name", ["list_tools", "list_prompts"])
+async def test_paginated_list_continuation_http_status_is_reported(method_name: str):
+    """A continuation page must report the same status code as the first page."""
+    cursor = "SECRET_OPAQUE_CURSOR"
+    server = MCPServerStreamableHttp(params={"url": _CREDENTIALED_URL})
+    request = httpx.Request("GET", _CREDENTIALED_URL)
+    http_error = httpx.HTTPStatusError(
+        "boom",
+        request=request,
+        response=httpx.Response(503, request=request),
+    )
+    session = MagicMock()
+    setattr(
+        session,
+        method_name,
+        AsyncMock(side_effect=[_paginated_list_result(method_name, cursor), http_error]),
+    )
+    server.session = session
+    server.max_retry_attempts = 0
+
+    with pytest.raises(UserError) as user_error_info:
+        await getattr(server, method_name)()
+
+    assert "HTTP error 503" in str(user_error_info.value)
+    assert cursor not in "".join(traceback.format_exception(user_error_info.value))
+    _assert_url_credentials_hidden(user_error_info.value)
+    _assert_not_retained_in_traceback_locals(user_error_info.value, http_error)
+    _assert_not_retained_in_exception_graph(user_error_info.value, http_error)
+    _assert_url_credentials_hidden_from_traceback_locals(user_error_info.value)
+    _assert_text_hidden_from_server_traceback_locals(user_error_info.value, cursor)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method_name", ["list_tools", "list_prompts"])
 async def test_paginated_list_cycle_does_not_retain_opaque_cursor(method_name: str):
     cursor = "SECRET_OPAQUE_CURSOR"
     server = MCPServerStreamableHttp(params={"url": _SAFE_URL})

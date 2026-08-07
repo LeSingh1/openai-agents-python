@@ -1588,7 +1588,14 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
             try:
                 page = await self._list_prompts_page(session, cursor)
             except BaseException as error:
-                if isinstance(error, BaseExceptionGroup):
+                if isinstance(error, UserError):
+                    # `_list_prompts_page` already redacts transport failures into a
+                    # credential-safe UserError. Mapping that again would classify it as an
+                    # unknown error and replace "HTTP error 503" with "Request failed.", which
+                    # is what page one reports for the same failure. Keep the message and drop
+                    # the original traceback, like the other branches here.
+                    pagination_failure = UserError(str(error))
+                elif isinstance(error, BaseExceptionGroup):
                     pagination_failure = _credential_safe_exception_group(error)
                 elif isinstance(error, Exception):
                     pagination_failure = self._user_error_for_request_operation(
